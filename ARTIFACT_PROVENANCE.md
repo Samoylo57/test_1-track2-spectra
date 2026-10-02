@@ -1,0 +1,72 @@
+# Scattering Spectra + PSMC CPU submission
+
+This image contains forecasting source code and dependencies, no input corpus,
+panel histories, cached synthetic banks, unit-indexed answers, trained model
+checkpoints, retrieval indexes, credentials or House model calls. Descriptor:
+`category: api`, `models: []`. The numerical estimates are fitted anew from the
+currently mounted unit prefix; no fitted model is packaged in the image.
+
+## Numerical code and sources
+
+- Own integration, PSMC, foveal embedding and joint PCA extension: MIT, this
+  workspace. Files are listed and SHA-256 hashed by `prepare_image.py`.
+- Rudy Morel Scattering Spectra 2.0.3 numerical core: MIT, commit
+  `48920143c4b702c220b22dd2486b9eb0e852592e`. Exact file hashes and upstream
+  license are in `vendor/scatspectra-manifest.json` and `vendor/LICENSE-scatspectra.txt`.
+  A minimal package initializer excludes the upstream S&P/VIX dataset frontend.
+  Fixed Battle-Lemarie filters contain no pretrained neural weights. Only
+  synthetic trajectory values are optimized to match prefix Phi1-Phi4 statistics.
+- Reference method: Morel et al., arXiv:2308.01486v1 (2023-08-02), and the
+  shadowing implementation at `751a800302e7482a1fc96820726e2141135cc8a0`.
+  The latter is not packaged; PSMC and its embedding are our NumPy implementation.
+- QFBench2 common 2.4.4, tag v2.4.4, source commit
+  `68bc878a740eb0040e70ddf0feab98405dca1d6d`: CC-BY-NC-4.0 (third-party license
+  retained in its wheel). Track2 scorer/helpers 3.1.0, source commit
+  `2299dab3d31f5e93c10df087af86ffb0b7bfe938`: MIT;
+  its source license is included in the preparation manifest. Official helpers
+  resolve target semantics and monthly periods. These source distributions
+  contain no fitted predictive model.
+- Python 3.13, NumPy, SciPy, pandas, pyarrow, scikit-learn, threadpoolctl,
+  PyTorch 2.8.0 CPU, matplotlib, termcolor and tqdm: software dependencies,
+  their upstream licenses apply. Versions are pinned in requirements; installed
+  versions are recorded inside the image. No neural checkpoint is loaded.
+
+Source-code release dates are software provenance, not a training-data cutoff.
+Source commits pin the numerical implementation; they supply no historical
+market facts used by the estimator. The image preparation manifest hashes its
+runtime files and official pure-Python wheels. The registry manifest digest
+pins the complete built image including base OS and dependency layers.
+
+## Data, fitting, selection and calibration
+
+Only panel observations dated at or before the mounted card's as-of are used.
+No data is downloaded at evaluation time, and no other unit is inspected.
+There is no GBDT/Spectra selector. The 300 most recent contiguous increments
+fit each Spectra bank; context is 126 daily steps or 20 monthly steps. Joint
+cards estimate standardized PCA loadings from aligned increments in the same
+prefix and synthesize independent latent Spectra paths; this is an explicit
+extension, not the authors' multivariate scattering operator. Joint PSMC then
+conditions whole paths across all requested assets. Short isolated transfer
+anchors use the latest sufficiently long earlier contiguous segment for fitting
+and context, and the current supplied level for anchoring. No return bridges
+the gap; no missing recent path is filled in. The stale regime is a material
+forecast-quality limitation, explicitly disclosed in each rationale.
+
+Kernel bandwidth uses generated past distances only, targeting ESS 256 among
+512 neighbors. No future labels fit/select/calibrate parameters. Fixed settings
+were explored on completed historical windows within supplied public prefixes;
+those pilot results are research only, not official leaderboard scores or
+independent final-test evidence. Task text is not used in this version.
+Input file hashes, training dates, anchors, estimates and conditioning diagnostics
+are included in each non-scored `forecast_rationale.md`.
+
+For predictable CPU runtime, the submission profile bounds each synthesis at 200
+L-BFGS-B iterations, with target relative error 0.006. Finite approximate banks
+are retained at the iteration limit, with actual per-path matching errors and
+convergence flags disclosed in the rationale. The research core's default remains
+strict (600 iterations, failure if tolerance is not reached). No other generator
+is substituted; an approximate match is a material statistical limitation.
+
+The software reads only the task's mounted input for forecasting. Dependency
+imports read packaged code; optional caches use `/tmp`. Three required deliverables
+use `/output`. Runtime seed is honored; CPU is used even when a GPU is granted.

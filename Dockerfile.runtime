@@ -1,0 +1,9 @@
+# Reuse a verified CPU dependency image when only our source changes.
+ARG DEPENDENCY_IMAGE=track2-spectra:cpu-deps
+FROM ${DEPENDENCY_IMAGE}
+COPY submission_agent.py prediction.py generators.py psmc.py embeddings.py scattering_generator.py joint_scattering.py /app/
+COPY vendor/ /app/vendor/
+COPY LICENSE ARTIFACT_PROVENANCE.md /app/
+LABEL qfbench2.interface_version="2.0"
+USER 65534:65534
+ENTRYPOINT ["python", "/app/submission_agent.py"]

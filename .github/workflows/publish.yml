@@ -1,0 +1,32 @@
+name: Publish CPU forecasting image
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build and check CPU image
+        env:
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_1
+        run: |
+          docker build --platform linux/amd64 --label org.opencontainers.image.source=https://github.com/Samoylo57/test_1-track2-spectra --tag "$IMAGE" .
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --entrypoint python "$IMAGE" -c 'import json,torch,qfbench2_common; from submission_agent import profile; p=profile("daily",0); assert torch.version.cuda is None; assert p.ss_device=="cpu" and p.ss_iterations==200 and not p.ss_strict_tolerance; print(json.dumps({"torch":torch.__version__,"cuda":torch.version.cuda,"generator":p.generator,"toolkit":qfbench2_common.__version__}))'
+          sha256sum submission_agent.py prediction.py generators.py psmc.py embeddings.py scattering_generator.py joint_scattering.py
+      - name: Publish to GHCR
+        env:
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_1
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push --quiet "$IMAGE"
+          reference=$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')
+          printf 'IMMUTABLE_IMAGE=%s\n' "$reference"
+          printf 'Published image: `%s`\n' "$reference" >> "$GITHUB_STEP_SUMMARY"
+          docker logout ghcr.io

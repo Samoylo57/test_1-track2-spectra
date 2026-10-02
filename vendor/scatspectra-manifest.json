@@ -1,0 +1,25 @@
+{
+  "repository": "https://github.com/RudyMorel/scattering_spectra",
+  "commit": "48920143c4b702c220b22dd2486b9eb0e852592e",
+  "version": "2.0.3",
+  "files": {
+    "description/__init__.py": "aefaab0b89d0d344f11c4f950c478f31a28df1d2cbf83e3515aae774c6263e93",
+    "description/described_tensor.py": "512be43a255213f02afb82c175224c2f29f98a25f398a14f94234d53a5306a1b",
+    "description/scale_indexer.py": "f86319c96861d3af9894d013f722aa0393a67dc2050f753c81148612fb8ca123",
+    "description/scat_model_description.py": "dfff0e6b92ec02bdabef7b29c38f2ad273d446714fb0b89cf9ea92a89d275d09",
+    "layers/__init__.py": "95de77827d772d5668f943a10b5a6690a1aeaf3102b787985fcdc8118778e601",
+    "layers/filter_bank.py": "95c37f328d02e600a0bbc774e0a5367f1ac856548a2414a958dc4faabf59bfc4",
+    "layers/layers_basics.py": "327a2860c58fb49f22f9aebc37b9d9d792bea49672db1911f35e6860455ea5cf",
+    "layers/layers_time.py": "cb3f77cbc68cbfcfdc353cb56611c10cdf1d1058deb3828c80a6de911bceb347",
+    "layers/loss.py": "fdb22d634d62b4400c4fbf64f9f769e0f4a41008a366860caf71df345f1bbc02",
+    "layers/solver.py": "e98a2c550b19c625e9c01902c9464d892ed228e988d5721cb8de059b729f6083",
+    "layers/statistics.py": "6de6be08bdae24b3cf285993c30f7c12940e125471771a48031c073372d1144f",
+    "models/__init__.py": "4917c5ee80d594e3808ba9c62a224850ae81fdaaea60b3bd892329fb6219669b",
+    "models/models.py": "12de262392d91b248d5850a953daa85c19db9110edad3a6db95c1d2d7bb81cfb",
+    "utils/__init__.py": "af57eae3d69befd0934fa0aba7344bce14c3170c8edcc8496e4c7b7a1a2807a5",
+    "utils/array_utils.py": "6506436efa5911717f4f77df8219549d609d4903a8891d42abc84363fb495be3",
+    "utils/collection_utils.py": "eeb91647e4c06981df7b8e6a3c3e5fb6cbc67496864decaaf0efab98ec4a61aa",
+    "utils/option_pricing.py": "1e607d2e2d80c287c03c666abf1ce8279860bdaf9b3d4a2d2abcce83f79a55b2",
+    "utils/plot_utils.py": "c61cfe63f84c919b12cc1113611c71d78e26099cd48495a7e2de00504f13cade"
+  }
+}
