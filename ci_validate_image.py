@@ -86,13 +86,15 @@ def main():
             path.parent.mkdir(parents=True,exist_ok=True)
             with archive.extractfile(member) as source:
                 path.write_bytes(source.read())
-    report=dict(image=args.image,source_revision=REVISION,accuracy_scored=False,results=[])
+    host_cpus=min(16,int(command(['docker','info','--format','{{.NCPU}}']).strip()))
+    report=dict(image=args.image,source_revision=REVISION,accuracy_scored=False,
+                cpu_limit=host_cpus,results=[])
     # Bound tmpfs, privileges and process count as on the Development worker.
     limits=['docker','run','--rm','--network','none','--read-only','--user','65534:65534',
         '--cap-drop','ALL','--security-opt','no-new-privileges',
         '--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=64m','--pids-limit','256',
         '--ulimit','nofile=1024:1024','--ulimit','nproc=256:256',
-        '--ulimit','fsize=67108864:67108864','--cpus','16','--memory','128g','--memory-swap','128g']
+        '--ulimit','fsize=67108864:67108864','--cpus',str(host_cpus),'--memory','128g','--memory-swap','128g']
     for unit in UNITS:
         input_path=root/'inputs'/unit
         card=tomllib.loads((input_path/'card.toml').read_text(encoding='utf-8'))
