@@ -1,4 +1,35 @@
-# Scattering Spectra + PSMC CPU submission
+# Scattering Spectra CPU submission (optional PSMC)
+
+## Release test_3-j5-h252-a0, 2026-10-12
+
+This release sets `QFBENCH_USE_PSMC=0` and uses the existing unconditional
+control branch, corresponding to alpha=0. It does not calculate PSMC distances
+or weights. It selects 1000 whole joint continuations uniformly from the same
+20000 candidates using the unchanged independent control seed stream. Bank
+synthesis, candidate past+future length, PCA, full contiguous prefix fitting,
+Battle-Lemarie Q=1/J<=5, historical target half-life=252 observations, context
+length 126 daily/20 monthly, 200-iteration limit and tolerance=0.006 are unchanged.
+Short prefixes still use J=4. Transfer anchoring is unchanged. PSMC code remains
+packaged for an explicit CLI override, but is disabled by the release ENV.
+No learned selector, per-card choice, historical evaluation results or corpus
+is included in the image. There are no House calls; category api/models[]=[].
+
+This is a fixed algorithm ablation requested after the public retrospective
+comparison of 75 cached predictions, not a fitted per-task selector. That
+comparison kept 54 calibration, 19 holdout and 2 purged cards, with 20
+stratified resamples per intermediate alpha in {0,.25,.5,.75,1}. Calibration
+selected alpha=0: local error 1.17423 vs 1.20339 for alpha=1; holdout 0.99443
+vs 1.01767. The comparison used reconstructed M0 and clipping 4 and is not
+an official score or independent test. No evaluation labels, cached forecasts
+or fitted selection thresholds are used by the forecaster; each numerical
+fit still reads only its currently mounted as-of prefix. Retrospective
+selection evidence is disclosed as such and does not establish causal
+validation on earlier historical cards. Any future learned selector or
+calibration must use information available by the individual task cutoff.
+
+The CLI accepts `--use-psmc 0|1`; without release ENV, the research profile
+retains PSMC on. Diagnostics, CLI summary and rationale record actual use and
+mixture_alpha; disabled PSMC diagnostics are null rather than a fabricated ESS.
 
 This image contains forecasting source code and dependencies, no input corpus,
 panel histories, cached synthetic banks, unit-indexed answers, trained model

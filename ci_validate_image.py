@@ -36,6 +36,9 @@ assert d['config']['ss_target_half_life']==252
 assert d['config']['training_window'] is None
 assert d['config']['ss_device']=='cpu' and d['config']['ss_iterations']==200
 assert d['config']['context_length']==(20 if d['unit_id']=='t2-F4-covid-nfp-2020' else 126)
+assert d['config']['use_psmc'] is False and d['psmc'] is None
+assert d['mixture_alpha']==0 and 'PSMC is disabled' in rationale
+assert 'alpha=0' in json.loads((out/'forecast_meta.json').read_text())['rationale']['method']
 assert not d['text_used']
 a,b,e=io.StringIO(),io.StringIO(),io.StringIO()
 with contextlib.redirect_stdout(a),contextlib.redirect_stderr(e):
@@ -48,6 +51,7 @@ assert smoke.admissible and code in (None,0) and score['admissible'] is True,(a.
 print(json.dumps({'admissible':True,'unit_id':d['unit_id'],'actual_J':expected,
  'context':d['config']['context_length'],'scale_policy':d['scale_policy'],
  'training_rows':d['training_rows'],'cpu_workers':d['config']['ss_workers'],
+ 'use_psmc':d['config']['use_psmc'],'mixture_alpha':d['mixture_alpha'],
  'official_gates':score,'torch':torch.__version__}))
 '''
 

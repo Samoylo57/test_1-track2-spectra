@@ -16,18 +16,18 @@ jobs:
           persist-credentials: false
       - name: Build and check CPU image
         env:
-          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_2-j5-h252
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_3-j5-h252-a0
         run: |
           docker build --platform linux/amd64 --label org.opencontainers.image.source=https://github.com/Samoylo57/test_1-track2-spectra --label org.opencontainers.image.revision="$GITHUB_SHA" --tag "$IMAGE" .
-          docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --entrypoint python "$IMAGE" -c 'import json,os,torch,qfbench2_common; from submission_agent import profile; p=profile("daily",0); assert torch.version.cuda is None; assert p.ss_device=="cpu" and p.ss_iterations==200 and not p.ss_strict_tolerance; assert p.training_window is None and p.context_length==126 and p.ss_target_half_life==252 and int(os.environ["QFBENCH_SS_MAX_SCALES"])==5; print(json.dumps({"torch":torch.__version__,"cuda":torch.version.cuda,"generator":p.generator,"toolkit":qfbench2_common.__version__}))'
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --entrypoint python "$IMAGE" -c 'import json,os,torch,qfbench2_common; from submission_agent import profile; p=profile("daily",0); assert torch.version.cuda is None; assert p.ss_device=="cpu" and p.ss_iterations==200 and not p.ss_strict_tolerance; assert not p.use_psmc; assert p.training_window is None and p.context_length==126 and p.ss_target_half_life==252 and int(os.environ["QFBENCH_SS_MAX_SCALES"])==5; print(json.dumps({"torch":torch.__version__,"cuda":torch.version.cuda,"generator":p.generator,"use_psmc":p.use_psmc,"toolkit":qfbench2_common.__version__}))'
           sha256sum submission_agent.py prediction.py generators.py psmc.py embeddings.py scattering_generator.py scattering_cpu.py joint_scattering.py
       - name: Validate real image and official gates
         env:
-          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_2-j5-h252
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_3-j5-h252-a0
         run: python3 ci_validate_image.py --image "$IMAGE" --report image-validation.json
       - name: Publish to GHCR
         env:
-          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_2-j5-h252
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_3-j5-h252-a0
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin

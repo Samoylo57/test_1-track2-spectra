@@ -1,4 +1,4 @@
-"""Offline CPU competition entrypoint: Scattering Spectra + foveal PSMC."""
+"""Offline CPU competition entrypoint: Scattering Spectra, optional foveal PSMC."""
 from __future__ import annotations
 import argparse
 from dataclasses import asdict, replace
@@ -25,7 +25,13 @@ def runtime_seed():
         raise ValueError('QFBENCH_SEED must be a non-negative integer')
     return int(value)
 
-def profile(frequency, seed, cpu_limit=16, workers=None, target_half_life=_ENV_DEFAULT, scales=_ENV_DEFAULT):
+def parse_use_psmc(value):
+    if value not in {'0', '1'}:
+        raise argparse.ArgumentTypeError('PSMC switch must be 0 (off) or 1 (on)')
+    return value == '1'
+
+def profile(frequency, seed, cpu_limit=16, workers=None, target_half_life=_ENV_DEFAULT, scales=_ENV_DEFAULT,
+            use_psmc=_ENV_DEFAULT):
     if not isinstance(cpu_limit, int) or cpu_limit < 1:
         raise ValueError('card CPU limit must be a positive integer')
     value = str(workers if workers is not None else os.environ.get('QFBENCH_SS_WORKERS', '16'))
@@ -41,12 +47,19 @@ def profile(frequency, seed, cpu_limit=16, workers=None, target_half_life=_ENV_D
             scales = parse_scales(os.environ.get('QFBENCH_SS_SCALES', 'auto'))
         except argparse.ArgumentTypeError as exc:
             raise ValueError(f'invalid QFBENCH_SS_SCALES: {exc}') from exc
+    if use_psmc is _ENV_DEFAULT:
+        try:
+            use_psmc = parse_use_psmc(os.environ.get('QFBENCH_USE_PSMC', '1'))
+        except argparse.ArgumentTypeError as exc:
+            raise ValueError(f'invalid QFBENCH_USE_PSMC: {exc}') from exc
+    if type(use_psmc) is not bool:
+        raise ValueError('use_psmc must be a boolean')
     return ForecastConfig(generator='scattering-spectra', embedding='foveal',
         training_window=None,
         context_length=20 if frequency=='monthly' else 126, ss_device='cpu', seed=seed,
         ss_iterations=200,ss_strict_tolerance=False,
         ss_workers=min(int(value), cpu_limit, cpu_budget()), ss_target_half_life=target_half_life,
-        ss_scales=scales)
+        ss_scales=scales, use_psmc=use_psmc)
 
 def select_fit_segment(series, target_type, frequency, config):
     """An isolated transfer anchor is not a return across the missing decade.
@@ -99,7 +112,8 @@ def predict_task(args):
     config = profile(frequency,runtime_seed(),cpu_limit=card.get('environment',{}).get('cpus',16),
                      workers=getattr(args,'ss_workers',None),
                      target_half_life=getattr(args,'ss_target_half_life',_ENV_DEFAULT),
-                     scales=getattr(args,'ss_scales',_ENV_DEFAULT))
+                     scales=getattr(args,'ss_scales',_ENV_DEFAULT),
+                     use_psmc=getattr(args,'use_psmc',_ENV_DEFAULT))
     limits = ParseLimits()
     if not max(limits.min_draws,card.get('scoring',{}).get('params',{}).get('n_draws_min',0)) <= config.n_draws <= limits.max_draws:
         raise ValueError('profile draw count conflicts with card')
@@ -108,6 +122,7 @@ def predict_task(args):
     config, scale_policy = resolve_scale_policy(config, fit_series, card['targets']['target_type'], frequency)
     prediction = forecast_history(fit_series,steps,target_type=card['targets']['target_type'],frequency=frequency,config=config)
     diagnostics = dict(prediction.diagnostics)
+    diagnostics['mixture_alpha'] = float(config.use_psmc)
     if scale_policy is not None:
         diagnostics['scale_policy'] = scale_policy
     if transfer:
@@ -140,6 +155,8 @@ def write_artifacts(card,prediction,diagnostics,out):
     out.parent.mkdir(parents=True,exist_ok=True)
     assets = card['targets']['asset_ids']; horizons = card['targets']['horizons']
     n_draws = len(prediction.samples)
+    use_psmc = diagnostics.get('config', {}).get('use_psmc', True)
+    method = 'CPU Scattering Spectra' + (' + foveal PSMC' if use_psmc else '; alpha=0, uniform joint draws') + '; no text or LLM'
     cube = prediction.samples.transpose(0,2,1) if prediction.samples.ndim==3 else prediction.samples[:,None,:]
     if cube.shape!=(n_draws,len(assets),len(horizons)) or not np.isfinite(cube).all():
         raise ValueError('invalid joint draw grid')
@@ -148,10 +165,11 @@ def write_artifacts(card,prediction,diagnostics,out):
         horizon=np.tile(np.asarray(horizons,dtype=np.int64),n_draws*len(assets)),value=cube.reshape(-1))).to_parquet(out,index=False)
     write_json(out.parent/'forecast_meta.json',dict(unit_id=card['task']['id'],asof=diagnostics['asof'],
         representation='samples',asset_ids=assets,horizons=horizons,n_draws=n_draws,target=card['targets']['target_type'],
-        rationale=dict(file='forecast_rationale.md',method='CPU Scattering Spectra + foveal PSMC; no text or LLM')))
+        rationale=dict(file='forecast_rationale.md',method=method)))
     text = f"# Forecast derivation: {card['task']['id']}\n\n"
     text += f"1. **Anchor.** {assets}, supplied observation at {diagnostics.get('transfer',{}).get('anchor_date',diagnostics['training_last_date'])}; value(s) {diagnostics['anchor']}. Cutoff: {diagnostics['asof']}. Log-return targets start at zero; panels contain decimal simple returns transformed with log(1+r).\n\n"
-    text += f"2. **Numerical adjustments.** Fit {diagnostics['training_rows']} increments from {diagnostics['training_first_date']} through {diagnostics['training_last_date']}. Fixed Battle-Lemarie wavelets and Phi1-Phi4 constrain synthetic paths; trajectory values, not neural weights, are optimized. Multiple targets use a prefix PCA and independent Spectra latent continuations, then joint PSMC; this is our explicit multivariate extension.\n\n"
+    selection = 'joint PSMC' if use_psmc else 'uniform whole joint continuation sampling'
+    text += f"2. **Numerical adjustments.** Fit {diagnostics['training_rows']} increments from {diagnostics['training_first_date']} through {diagnostics['training_last_date']}. Fixed Battle-Lemarie wavelets and Phi1-Phi4 constrain synthetic paths; trajectory values, not neural weights, are optimized. Multiple targets use a prefix PCA and independent Spectra latent continuations, then {selection}; this is our explicit multivariate extension.\n\n"
     if 'scale_policy' in diagnostics:
         text += f"**Scale policy.** {json.dumps(diagnostics['scale_policy'], ensure_ascii=False)}. Automatic scales are capped using only supplied prefix length. Explicit fixed-J requests retain strict validation.\n\n"
     half_life = diagnostics.get('config', {}).get('ss_target_half_life')
@@ -159,8 +177,11 @@ def write_artifacts(card,prediction,diagnostics,out):
     if scales is not None:
         text += f"**Wavelet scales.** Fixed J={scales} is used for both historical and synthetic Battle-Lemarie transforms. It must fit the supplied history and synthesis bank; no automatic scale substitution is made.\n\n"
     if half_life is not None:
-        text += f"**Historical target weighting.** Exponential time weights with half-life {half_life:g} observations apply to historical wavelet energies and Phi1-Phi4 averages. The newest statistic has relative weight 1, one half-life ago 0.5. Synthetic bank statistics use uniform averages. Standardization and PCA use the supplied fit prefix with uniform weights; PSMC conditions its existing recent context. This is an optional extension of the authors' uniform estimator.\n\n"
-    text += "3. **Conditioning.** Foveal cumulative changes compare observed and generated pasts; the 512 nearest pasts receive Gaussian weights with a past-only bandwidth targeting ESS 256. Whole joint continuations are resampled. All horizons and assets within a draw share that continuation. The synthesis seed is fixed at 12345 (plus latent component index); runtime QFBENCH_SEED controls candidate and resampling draws.\n\n"
+        text += f"**Historical target weighting.** Exponential time weights with half-life {half_life:g} observations apply to historical wavelet energies and Phi1-Phi4 averages. The newest statistic has relative weight 1, one half-life ago 0.5. Synthetic bank statistics use uniform averages. Standardization and PCA use the supplied fit prefix with uniform weights. The past-context length remains separately configured. This is an optional extension of the authors' uniform estimator.\n\n"
+    if use_psmc:
+        text += "3. **Conditioning.** Foveal cumulative changes compare observed and generated pasts; the 512 nearest pasts receive Gaussian weights with a past-only bandwidth targeting ESS 256. Whole joint continuations are resampled. All horizons and assets within a draw share that continuation. The synthesis seed is fixed at 12345 (plus latent component index); runtime QFBENCH_SEED controls candidate and resampling draws.\n\n"
+    else:
+        text += "3. **Selection (alpha=0).** PSMC is disabled; no distance calculation, nearest-neighbour selection or kernel weighting is performed. Generate the same 20,000 candidates with the unchanged past-context + maximum-horizon length, and use the existing independent control RNG stream to select 1,000 whole joint continuations uniformly with replacement. All assets and horizons within a draw share the selected continuation. This is the same unconditional branch used in the saved paired experiment. The synthesis seed remains 12345 (plus latent component index); QFBENCH_SEED controls candidate and control selection.\n\n"
     if 'transfer' in diagnostics:
         text += f"4. **Transfer limitation.** {json.dumps(diagnostics['transfer'],ensure_ascii=False)}. No differences span the missing interval.\n\n"
     text += "5. **Scale and shape.** Empirical synthetic increments retain fitted means and scales; their cumulative sums determine endpoint draws. Synthesis uses at most 200 iterations per latent component, aiming at relative error 0.006; finite approximations are retained if this target is not attained. Actual matching errors and convergence flags are recorded below. A non-converged bank is approximate, not a claim of exact spectrum matching. Monthly observation periods use the official mapping while output retains card horizon keys. No hand-coded scenario shifts, text claims, House calls, pretrained weights or other-unit histories are used. Accuracy against sealed future outcomes has not been measured locally.\n\n"
@@ -184,13 +205,16 @@ def main(argv=None):
                         help='historical target-statistic half-life in observations; none overrides the environment')
     parser.add_argument('--ss-scales', type=parse_scales, default=argparse.SUPPRESS,
                         help='fixed Battle-Lemarie J, or auto to override the environment')
+    parser.add_argument('--use-psmc', type=parse_use_psmc, default=argparse.SUPPRESS,
+                        help='1 enables conditioning; 0 selects the unchanged unconditional branch')
     args = parser.parse_args(argv)
     try:
         card,prediction,diagnostics = predict_task(args)
         write_artifacts(card,prediction,diagnostics,args.out.resolve())
         print(json.dumps(dict(unit_id=card['task']['id'],n_draws=len(prediction.samples),
             assets=len(card['targets']['asset_ids']),seed=runtime_seed(),device='cpu',
-            transfer='transfer' in diagnostics,psmc_ess=diagnostics['psmc']['effective_sample_size'])))
+            transfer='transfer' in diagnostics,mixture_alpha=diagnostics['mixture_alpha'],
+            psmc_ess=(diagnostics.get('psmc') or {}).get('effective_sample_size'))))
     except (ValueError,KeyError,OSError,RuntimeError) as exc:
         parser.exit(2,f'forecast failed: {exc}\n')
     return 0
