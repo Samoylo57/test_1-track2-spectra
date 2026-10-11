@@ -25,7 +25,7 @@ from pathlib import Path
 from qfbench2_common.smoke import run_smoke
 from qfbench2_track_forecasting.scoring import _main,build_verifier
 import torch
-root=Path('/input');out=Path('/output')
+root=Path('/raw-unit');out=Path('/output')
 assert torch.version.cuda is None
 assert {p.name for p in out.iterdir()}=={'forecast.parquet','forecast_meta.json','forecast_rationale.md'}
 rationale=(out/'forecast_rationale.md').read_text(encoding='utf-8')
@@ -77,6 +77,13 @@ def main():
             relative=Path(*parts[3:])
             if not member.isfile() or '..' in relative.parts:
                 continue
+            with archive.extractfile(member) as source:
+                content=source.read()
+            # Keep the committed tree intact for official checksum verification.
+            raw_path=root/'raw-units'/parts[2]/relative
+            assert raw_path.resolve().is_relative_to(root.resolve())
+            raw_path.parent.mkdir(parents=True,exist_ok=True)
+            raw_path.write_bytes(content)
             if len(relative.parts)==1 and relative.suffix=='.parquet':
                 relative=Path('panels')/relative
             elif not (str(relative) in ('card.toml','forecast_spec.json') or relative.parts[0]=='text'):
@@ -84,8 +91,7 @@ def main():
             path=root/'inputs'/parts[2]/relative
             assert path.resolve().is_relative_to(root.resolve())
             path.parent.mkdir(parents=True,exist_ok=True)
-            with archive.extractfile(member) as source:
-                path.write_bytes(source.read())
+            path.write_bytes(content)
     host_cpus=min(16,int(command(['docker','info','--format','{{.NCPU}}']).strip()))
     report=dict(image=args.image,source_revision=REVISION,accuracy_scored=False,
                 cpu_limit=host_cpus,results=[])
@@ -100,6 +106,7 @@ def main():
         card=tomllib.loads((input_path/'card.toml').read_text(encoding='utf-8'))
         output_path=root/'outputs'/unit;output_path.mkdir(parents=True);output_path.chmod(0o777)
         mounts=['--mount',f'type=bind,source={input_path},target=/input,readonly',
+                '--mount',f'type=bind,source={root/"raw-units"/unit},target=/raw-unit,readonly',
                 '--mount',f'type=bind,source={output_path},target=/output']
         started=time.perf_counter()
         command(limits+mounts+['-e','QFBENCH_SEED=0','-e','QFBENCH_NETWORK=none',args.image,
