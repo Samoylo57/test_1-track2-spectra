@@ -1,7 +1,7 @@
 """Offline CPU competition entrypoint: Scattering Spectra + foveal PSMC."""
 from __future__ import annotations
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date
 import hashlib
 import json
@@ -11,10 +11,13 @@ import sys
 import numpy as np
 import pandas as pd
 
-from prediction import ForecastConfig, Prediction, forecast_history, historical_steps, load_task, resolve_horizon_steps, write_json
+from prediction import ForecastConfig, Prediction, forecast_history, historical_steps, load_task, parse_target_half_life, parse_scales, resolve_horizon_steps, write_json
 from qfbench2_track_forecasting.limits import ParseLimits
+from scattering_cpu import cpu_budget
+from scattering_generator import select_scales
 
 ARTIFACTS = {'forecast.parquet','forecast_meta.json','forecast_rationale.md'}
+_ENV_DEFAULT = object()
 
 def runtime_seed():
     value = os.environ.get('QFBENCH_SEED','0')
@@ -22,10 +25,28 @@ def runtime_seed():
         raise ValueError('QFBENCH_SEED must be a non-negative integer')
     return int(value)
 
-def profile(frequency, seed):
+def profile(frequency, seed, cpu_limit=16, workers=None, target_half_life=_ENV_DEFAULT, scales=_ENV_DEFAULT):
+    if not isinstance(cpu_limit, int) or cpu_limit < 1:
+        raise ValueError('card CPU limit must be a positive integer')
+    value = str(workers if workers is not None else os.environ.get('QFBENCH_SS_WORKERS', '16'))
+    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 16:
+        raise ValueError('Spectra component workers must be in [1,16]')
+    if target_half_life is _ENV_DEFAULT:
+        try:
+            target_half_life = parse_target_half_life(os.environ.get('QFBENCH_SS_TARGET_HALF_LIFE', 'none'))
+        except argparse.ArgumentTypeError as exc:
+            raise ValueError(f'invalid QFBENCH_SS_TARGET_HALF_LIFE: {exc}') from exc
+    if scales is _ENV_DEFAULT:
+        try:
+            scales = parse_scales(os.environ.get('QFBENCH_SS_SCALES', 'auto'))
+        except argparse.ArgumentTypeError as exc:
+            raise ValueError(f'invalid QFBENCH_SS_SCALES: {exc}') from exc
     return ForecastConfig(generator='scattering-spectra', embedding='foveal',
+        training_window=None,
         context_length=20 if frequency=='monthly' else 126, ss_device='cpu', seed=seed,
-        ss_iterations=200,ss_strict_tolerance=False)
+        ss_iterations=200,ss_strict_tolerance=False,
+        ss_workers=min(int(value), cpu_limit, cpu_budget()), ss_target_half_life=target_half_life,
+        ss_scales=scales)
 
 def select_fit_segment(series, target_type, frequency, config):
     """An isolated transfer anchor is not a return across the missing decade.
@@ -51,16 +72,44 @@ def select_fit_segment(series, target_type, frequency, config):
             return segment, end!=len(series)
     raise ValueError('no supplied uninterrupted segment long enough for Scattering Spectra')
 
+def resolve_scale_policy(config, series, target_type, frequency):
+    """Cap automatic scales using this card's prefix; explicit fixed J stays strict."""
+    value = os.environ.get('QFBENCH_SS_MAX_SCALES')
+    if value is None:
+        return config, None
+    try:
+        maximum = parse_scales(value)
+    except argparse.ArgumentTypeError as exc:
+        raise ValueError(f'invalid QFBENCH_SS_MAX_SCALES: {exc}') from exc
+    if maximum is None:
+        raise ValueError('QFBENCH_SS_MAX_SCALES must be a positive integer')
+    if config.ss_scales is not None:
+        return config, dict(mode='explicit fixed J', maximum=maximum,
+                            effective=config.ss_scales, fixed_request_overrides_cap=True)
+    sample = series.iloc[:, 0] if isinstance(series, pd.DataFrame) else series
+    length = len(historical_steps(sample, target_type, frequency, config.level_transform))
+    automatic = select_scales(length + (config.ss_domain == 'levels'), config.ss_bank_length, None)
+    effective = min(maximum, automatic)
+    return replace(config, ss_scales=effective), dict(mode='automatic J capped by supplied prefix',
+        maximum=maximum, length_supported=int(automatic), effective=int(effective),
+        history_observations=length, reduced_for_short_history=bool(effective < maximum))
+
 def predict_task(args):
     card,series,source,frequency,asof = load_task(args,allow_joint=True)
-    config = profile(frequency,runtime_seed())
+    config = profile(frequency,runtime_seed(),cpu_limit=card.get('environment',{}).get('cpus',16),
+                     workers=getattr(args,'ss_workers',None),
+                     target_half_life=getattr(args,'ss_target_half_life',_ENV_DEFAULT),
+                     scales=getattr(args,'ss_scales',_ENV_DEFAULT))
     limits = ParseLimits()
     if not max(limits.min_draws,card.get('scoring',{}).get('params',{}).get('n_draws_min',0)) <= config.n_draws <= limits.max_draws:
         raise ValueError('profile draw count conflicts with card')
     steps = resolve_horizon_steps(card,series,source,frequency,asof)
     fit_series,transfer = select_fit_segment(series,card['targets']['target_type'],frequency,config)
+    config, scale_policy = resolve_scale_policy(config, fit_series, card['targets']['target_type'], frequency)
     prediction = forecast_history(fit_series,steps,target_type=card['targets']['target_type'],frequency=frequency,config=config)
     diagnostics = dict(prediction.diagnostics)
+    if scale_policy is not None:
+        diagnostics['scale_policy'] = scale_policy
     if transfer:
         if card['targets']['target_type']!='level':
             raise ValueError('sparse transfer adjustment supports level targets only')
@@ -103,6 +152,14 @@ def write_artifacts(card,prediction,diagnostics,out):
     text = f"# Forecast derivation: {card['task']['id']}\n\n"
     text += f"1. **Anchor.** {assets}, supplied observation at {diagnostics.get('transfer',{}).get('anchor_date',diagnostics['training_last_date'])}; value(s) {diagnostics['anchor']}. Cutoff: {diagnostics['asof']}. Log-return targets start at zero; panels contain decimal simple returns transformed with log(1+r).\n\n"
     text += f"2. **Numerical adjustments.** Fit {diagnostics['training_rows']} increments from {diagnostics['training_first_date']} through {diagnostics['training_last_date']}. Fixed Battle-Lemarie wavelets and Phi1-Phi4 constrain synthetic paths; trajectory values, not neural weights, are optimized. Multiple targets use a prefix PCA and independent Spectra latent continuations, then joint PSMC; this is our explicit multivariate extension.\n\n"
+    if 'scale_policy' in diagnostics:
+        text += f"**Scale policy.** {json.dumps(diagnostics['scale_policy'], ensure_ascii=False)}. Automatic scales are capped using only supplied prefix length. Explicit fixed-J requests retain strict validation.\n\n"
+    half_life = diagnostics.get('config', {}).get('ss_target_half_life')
+    scales = diagnostics.get('config', {}).get('ss_scales')
+    if scales is not None:
+        text += f"**Wavelet scales.** Fixed J={scales} is used for both historical and synthetic Battle-Lemarie transforms. It must fit the supplied history and synthesis bank; no automatic scale substitution is made.\n\n"
+    if half_life is not None:
+        text += f"**Historical target weighting.** Exponential time weights with half-life {half_life:g} observations apply to historical wavelet energies and Phi1-Phi4 averages. The newest statistic has relative weight 1, one half-life ago 0.5. Synthetic bank statistics use uniform averages. Standardization and PCA use the supplied fit prefix with uniform weights; PSMC conditions its existing recent context. This is an optional extension of the authors' uniform estimator.\n\n"
     text += "3. **Conditioning.** Foveal cumulative changes compare observed and generated pasts; the 512 nearest pasts receive Gaussian weights with a past-only bandwidth targeting ESS 256. Whole joint continuations are resampled. All horizons and assets within a draw share that continuation. The synthesis seed is fixed at 12345 (plus latent component index); runtime QFBENCH_SEED controls candidate and resampling draws.\n\n"
     if 'transfer' in diagnostics:
         text += f"4. **Transfer limitation.** {json.dumps(diagnostics['transfer'],ensure_ascii=False)}. No differences span the missing interval.\n\n"
@@ -122,6 +179,11 @@ def main(argv=None):
     parser.add_argument('--asof')
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--unit-id',help='local development convenience; image has no unit index')
+    parser.add_argument('--ss-workers',type=int,help='CPU component workers, 1..16; capped by card and container')
+    parser.add_argument('--ss-target-half-life', type=parse_target_half_life, default=argparse.SUPPRESS,
+                        help='historical target-statistic half-life in observations; none overrides the environment')
+    parser.add_argument('--ss-scales', type=parse_scales, default=argparse.SUPPRESS,
+                        help='fixed Battle-Lemarie J, or auto to override the environment')
     args = parser.parse_args(argv)
     try:
         card,prediction,diagnostics = predict_task(args)

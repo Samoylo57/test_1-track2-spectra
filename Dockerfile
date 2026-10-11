@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONUTF8=1 \
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
     NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
     MPLCONFIGDIR=/tmp/matplotlib XDG_CACHE_HOME=/tmp/cache \
-    PYTORCH_KERNEL_CACHE_PATH=/tmp/torch-kernels HOME=/tmp
+    PYTORCH_KERNEL_CACHE_PATH=/tmp/torch-kernels HOME=/tmp \
+    QFBENCH_SS_MAX_SCALES=5 QFBENCH_SS_TARGET_HALF_LIFE=252
 WORKDIR /app
 COPY requirements-submission.txt /build/requirements.txt
 COPY requirements-submission-lock.txt /build/constraints.txt
@@ -17,7 +18,7 @@ RUN python -m pip install --no-cache-dir torch==2.8.0+cpu --constraint /build/co
     && python -m pip check \
     && python -m pip freeze > /app/installed-packages.txt \
     && rm -rf /build
-COPY submission_agent.py prediction.py generators.py psmc.py embeddings.py scattering_generator.py joint_scattering.py ./
+COPY submission_agent.py prediction.py generators.py psmc.py embeddings.py scattering_generator.py scattering_cpu.py joint_scattering.py ./
 COPY vendor/ ./vendor/
 COPY LICENSE ARTIFACT_PROVENANCE.md ./
 USER 65534:65534

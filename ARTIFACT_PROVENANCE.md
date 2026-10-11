@@ -41,8 +41,8 @@ pins the complete built image including base OS and dependency layers.
 
 Only panel observations dated at or before the mounted card's as-of are used.
 No data is downloaded at evaluation time, and no other unit is inspected.
-There is no GBDT/Spectra selector. The 300 most recent contiguous increments
-fit each Spectra bank; context is 126 daily steps or 20 monthly steps. Joint
+There is no GBDT/Spectra selector. All available contiguous increments up to
+the mounted unit's cutoff fit each Spectra bank; context is 126 daily steps or 20 monthly steps. Joint
 cards estimate standardized PCA loadings from aligned increments in the same
 prefix and synthesize independent latent Spectra paths; this is an explicit
 extension, not the authors' multivariate scattering operator. Joint PSMC then
@@ -59,6 +59,119 @@ those pilot results are research only, not official leaderboard scores or
 independent final-test evidence. Task text is not used in this version.
 Input file hashes, training dates, anchors, estimates and conditioning diagnostics
 are included in each non-scored `forecast_rationale.md`.
+
+## Optional historical target weighting
+
+`--ss-target-half-life H` (research and submission CLIs) or
+`QFBENCH_SS_TARGET_HALF_LIFE=H` (submission profile) selects normalized
+exponential weights `2^(-age/H)` for historical target statistics. The parameter
+is measured in input observations: business observations on daily panels and
+months on monthly panels. `None` is the uniform default; an explicit CLI `none`
+also overrides an environment setting.
+
+The weights pool historical wavelet energies used for scale normalization and
+the historical Phi1–Phi4 statistics through the pinned core's estimator API.
+Wavelet filtering precedes weighting; input values are not multiplied by a
+decay function. Generated bank statistics retain uniform pooling and are matched
+to these historical targets. Prefix standardization, PCA, synthesis path length
+and PSMC remain separately configured. The operator is own numerical code in
+`scattering_generator.py`, with no modifications to vendored source files,
+learned checkpoints, additional observations or future-label access.
+
+This is a disclosed extension of the authors' uniform estimator, not a claim
+that their published experiments used decay. Diagnostics record the half-life,
+age unit, effective historical observation count and pooling of synthetic
+statistics. Configuration-specific identities prevent forecasts from different
+half-lives sharing a cache key in the accelerated paired test. Existing frozen
+results are preserved. On 2026-10-11 the full-history J=5, half-life=252,
+PSMC-context=126 configuration completed the same 75-card paired evaluation:
+local composite error 1.14872 versus 1.24171 for the saved unweighted automatic-J
+full-history run. All 126 component fits reached tolerance 0.006. Runtime was
+894.31 versus 2619.79 seconds with the same 16-slot CPU budget and library
+versions. J and weighting changed together; their individual effects are not
+identified by this experiment. These are repeated public retrospective tests,
+not official leaderboard results or independent final-test evidence.
+
+A subsequent paired run on 2026-10-11 fixed J=5 and disabled historical time
+weighting, with all numerical sources and other profile fields unchanged from
+the weighted J=5 run. All 75 cards completed; all 126 component fits reached
+tolerance. Its local mean composite error was 1.25757 (holdout 1.19410), and
+wall time was 1014.36 seconds. Thus changing J alone, with uniform weights,
+changed mean error by +1.28% and holdout error by -2.50% versus automatic J.
+Adding half-life=252 weights at J=5 changed mean error by -8.66% and holdout
+error by -14.78%. Weighted forecasts improved 34/75 cards and 12/19 holdout
+cards; improvements in large errors have a substantial influence on the mean.
+Mean iterations were 110.13 unweighted and 112.81 weighted; timing differences
+between these two runs are subject to host load and filesystem variation.
+The report postprocessor reads only completed runs, verifies paired outcomes
+and M0, and leaves the numerical forecaster and frozen evaluator unchanged.
+
+A fourth paired run on 2026-10-11 retained half-life=252 and changed only
+the J configuration from fixed 5 to automatic. The same full historical inputs,
+numerical sources, libraries, seeds, 16 CPU slots and 126-observation PSMC
+context were used. All 75 forecasts completed without failures. Actual scale
+counts were 124 components at J=7 and two at J=6. Local composite error was
+1.17531 versus 1.14872 for weighted J=5 (+2.32%); holdout error was 1.15144
+versus 1.01767 (+13.14%). Wall time was 3005.45 versus 894.31 seconds (3.36x).
+The tolerance was attained by 8/126 components versus 126/126; mean iterations
+were 198.10 versus 112.81. J changes the constraint count and the existing
+bank edge exclusion. This compares the configured pipeline at 200 iterations,
+not the two scale choices at equal achieved synthesis accuracy.
+
+Without PSMC, mean generator error decreased from 1.12199 to 1.09221 while
+holdout error increased from 0.99443 to 1.02580. Consequently the overall
+deterioration concerns the final conditional pipeline. Adding weights at
+automatic J improved overall error by 5.35% and holdout error by 5.99% versus
+automatic J with uniform historical pooling. The four-run postprocessor checks
+completion before reading scores and preserves earlier reports. Post-run
+verification confirmed all 12 recorded numerical/evaluation source hashes,
+all 18 pinned vendored source hashes, and the original/comparison report hashes.
+These remain repeated public retrospective evaluations, not official scores.
+
+## CPU execution
+
+The 2026-10-11 test_2 image sets QFBENCH_SS_MAX_SCALES=5 and
+QFBENCH_SS_TARGET_HALF_LIFE=252. Automatic J is capped using only the mounted
+card's usable prefix length and the synthesis bank length; an explicit fixed-J
+request retains strict validation and takes precedence. This chooses J=5 on
+102/104 public input directories and J=4 on the short monthly NFP practice card
+and the worked exemplar. The separate 75-card accuracy experiment remains J=5
+on every card. The cap packages code, not forecasts, fitted banks or unit answers.
+All source/input selection and scale-policy decisions appear in the rationale.
+
+Full contiguous available history is used for fitting. Daily PSMC keeps 126
+observations, and monthly PSMC keeps the existing 20 observations. The half-life
+is 252 input observations in both cases: daily trading observations or monthly
+observations respectively. This release introduces no House calls, language
+model weights, static calibration coefficients or new learned artifact. It
+retains the original 200-iteration approximation policy and seeds.
+
+The optional `--ss-scales J` / `QFBENCH_SS_SCALES=J` fixes the number of
+Battle-Lemarie scales in both historical and synthetic transforms. The default
+remains the existing length-based automatic selection. Requested scales must
+fit both signal lengths; unsupported requests fail rather than being clamped.
+This is own configuration code around the unchanged vendored core. Changing
+J invalidates a fitted bank and is recorded in diagnostics and cache identity.
+
+`scattering_cpu.py` supplies execution adapters around the unchanged vendored
+core: it removes identity channel and whole-batch gathers while retaining the
+same scale selection, reductions and gradients. A bounded thread pool prepares
+independent PCA-component banks with one native thread per component. The pool
+is capped by the card's CPU grant, process affinity, Linux container CPU quota
+and 16 workers. Nested multiprocessing evaluation workers use one component
+worker unless the outer test scheduler grants an explicit CPU allocation; the
+accelerated test scheduler reserves at most 16 slots across all concurrent
+cards. A grant is local to one invocation and is reset on exit, including
+failures. Component seeds and candidate sampling order are unchanged; entire
+joint paths are still conditioned and resampled together.
+
+The pool shares imported numerical code, uses no additional process, external
+service, IPC arrays, compiler/JIT, temporary data files or packaged fit results.
+Only the mounted unit prefix is used. Errors and interruptions cancel pending
+components; active optimizations stop at their next objective evaluation.
+Requested/effective workers and bank preparation timing are disclosed in
+rationale diagnostics. Use `--ss-workers 1` or `QFBENCH_SS_WORKERS=1` to select
+sequential execution. GPU remains disabled in this image.
 
 For predictable CPU runtime, the submission profile bounds each synthesis at 200
 L-BFGS-B iterations, with target relative error 0.006. Finite approximate banks

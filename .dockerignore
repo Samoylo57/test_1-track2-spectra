@@ -9,6 +9,7 @@
 !psmc.py
 !embeddings.py
 !scattering_generator.py
+!scattering_cpu.py
 !joint_scattering.py
 !LICENSE
 !ARTIFACT_PROVENANCE.md

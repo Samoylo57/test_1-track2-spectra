@@ -35,7 +35,7 @@ KIT = BASE.parent / "track2-pilot-kit"
 class ForecastConfig:
     generator: str = "stationary-bootstrap"
     student_df: float = 5.0
-    training_window: int = 300
+    training_window: int | None = 300  # None uses the entire contiguous input prefix.
     context_length: int = 20
     block_length: float = 20.0
     n_candidates: int = 20_000
@@ -55,18 +55,31 @@ class ForecastConfig:
     ss_device: str = "cpu"
     ss_domain: str = "increments"
     ss_strict_tolerance: bool = True
+    ss_cpu_fastpath: bool = True
+    ss_workers: int = 1
+    ss_target_half_life: float | None = None
+    ss_scales: int | None = None
     n_draws: int = 1000
     seed: int = 42
     level_transform: str = "difference"
     use_psmc: bool = True
 
     def __post_init__(self) -> None:
-        if self.context_length < 2 or self.training_window < max(30, self.context_length):
+        if self.context_length < 2 or (self.training_window is not None and
+                self.training_window < max(30, self.context_length)):
             raise ValueError("training_window must be >= max(30, context_length), context >= 2")
         if self.n_candidates < self.top_k or self.top_k < 1 or self.n_draws < 2:
             raise ValueError("require n_candidates >= top_k >= 1 and n_draws >= 2")
         if self.level_transform not in {"difference", "log"}:
             raise ValueError("level_transform must be difference or log")
+        if not isinstance(self.ss_workers, int) or not 1 <= self.ss_workers <= 16:
+            raise ValueError("ss_workers must be an integer in [1,16]")
+        if self.ss_target_half_life is not None and (isinstance(self.ss_target_half_life, (bool, np.bool_)) or
+                not np.isfinite(self.ss_target_half_life) or self.ss_target_half_life <= 0):
+            raise ValueError('ss_target_half_life must be finite and positive, or None')
+        if self.ss_scales is not None and (isinstance(self.ss_scales, (bool, np.bool_)) or
+                not isinstance(self.ss_scales, (int, np.integer)) or self.ss_scales < 1):
+            raise ValueError('ss_scales must be a positive integer or None')
         self.create_generator()
         self.create_psmc()
 
@@ -76,7 +89,8 @@ class ForecastConfig:
                 "max_path_length": self.ss_max_path_length, "batch_size": self.ss_batch_size,
                 "max_iterations": self.ss_iterations, "tolerance": self.ss_tolerance,
                 "seed": self.ss_seed, "device": self.ss_device, "domain": self.ss_domain,
-                "strict_tolerance": self.ss_strict_tolerance})
+                "strict_tolerance": self.ss_strict_tolerance, "cpu_fastpath": self.ss_cpu_fastpath,
+                "target_half_life": self.ss_target_half_life, "scales": self.ss_scales})
 
     def create_psmc(self) -> PSMC:
         return PSMC(self.top_k, self.ess_fraction, self.bandwidth, self.embedding,
@@ -144,7 +158,7 @@ def forecast_history(
                       for asset in series.columns}).dropna()
         if joint else historical_steps(series, target_type, frequency, config.level_transform)
     )
-    training = increments.iloc[-config.training_window :]
+    training = increments if config.training_window is None else increments.iloc[-config.training_window :]
     if len(training) < max(30, config.context_length):
         raise ValueError(
             f"only {len(training)} recent contiguous increments; need "
@@ -157,7 +171,7 @@ def forecast_history(
         from joint_scattering import JointScatteringGenerator
         from dataclasses import fields
         options = {f.name: getattr(generator, f.name) for f in fields(generator) if f.init}
-        generator = JointScatteringGenerator(options)
+        generator = JointScatteringGenerator(options, workers=config.ss_workers)
     generator.fit(training.to_numpy())
     candidates = generator.sample(
         config.n_candidates,
@@ -467,6 +481,35 @@ def run_backtest(args: argparse.Namespace, config: ForecastConfig) -> None:
     print(f"Report: {out}")
 
 
+def parse_training_window(value: str) -> int | None:
+    if value.lower() == "all":
+        return None
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("training window must be an integer or 'all'") from exc
+
+
+def parse_target_half_life(value: str) -> float | None:
+    if value.lower() == 'none':
+        return None
+    try:
+        result = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError('target half-life must be positive or none') from exc
+    if not np.isfinite(result) or result <= 0:
+        raise argparse.ArgumentTypeError('target half-life must be finite and positive or none')
+    return result
+
+
+def parse_scales(value: str) -> int | None:
+    if value.lower() in {'auto', 'none'}:
+        return None
+    if not value.isascii() or not value.isdigit() or int(value) < 1:
+        raise argparse.ArgumentTypeError('Spectra scales must be a positive integer or auto')
+    return int(value)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["forecast", "backtest"])
@@ -479,7 +522,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path)
     parser.add_argument("--generator", choices=GENERATOR_NAMES, default="stationary-bootstrap")
     parser.add_argument("--student-df", type=float, default=5.0)
-    parser.add_argument("--training-window", type=int, default=300)
+    parser.add_argument("--training-window", type=parse_training_window, default=300,
+                        help="recent increment count, or 'all' for the entire contiguous input prefix")
     parser.add_argument("--context-length", type=int, default=20)
     parser.add_argument("--block-length", type=float, default=20)
     parser.add_argument("--n-candidates", type=int, default=20_000)
@@ -499,6 +543,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ss-device", choices=["auto", "cpu", "cuda"], default="cpu")
     parser.add_argument("--ss-domain", choices=["increments", "levels"], default="increments")
     parser.add_argument("--ss-strict-tolerance", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--ss-cpu-fastpath", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--ss-workers", type=int, default=1,
+                        help="CPU workers for joint Spectra components, 1..16; nested process pools use 1")
+    parser.add_argument('--ss-target-half-life', type=parse_target_half_life,
+                        help='historical target-statistic half-life in observations; none disables (default)')
+    parser.add_argument('--ss-scales', type=parse_scales,
+                        help='fixed number of Battle-Lemarie scales J, or auto (default)')
     parser.add_argument("--n-draws", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--level-transform", choices=["difference", "log"], default="difference")
