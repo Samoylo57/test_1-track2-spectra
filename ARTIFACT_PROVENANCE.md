@@ -1,5 +1,37 @@
 # Scattering Spectra CPU submission (optional PSMC)
 
+## Current release test_3-j5-unweighted-a0, 2026-10-12
+
+The requested third Development submission sets `QFBENCH_SS_TARGET_HALF_LIFE=none`
+and `QFBENCH_USE_PSMC=0`. All historical wavelet energies and scattering targets
+use uniform pooling. It uses the existing unconditional control branch: 1000
+whole joint continuations sampled uniformly from the same 20000 candidates with
+the unchanged control RNG stream. PSMC distances, neighbors and weights are not
+computed. Full contiguous prefix fitting, Battle-Lemarie Q=1/J<=5, short-prefix
+J=4, PCA, 64x1024 bank, candidate past+future length, context setting 126 daily/20
+monthly, CPU/200 iterations, tolerance 0.006, transfer anchoring and all eight
+numerical source files are unchanged from the prepared h252/alpha-zero image.
+The `none` ENV explicitly overrides an inherited half-life in runtime builds.
+
+This is a fixed algorithm setting, with no fitted selector, per-card lookup or
+packaged model. The public retrospective comparison covered five completed
+profiles times alpha in {0,.25,.5,.75,1}, using the same 54 calibration, 19
+holdout and 2 purged cards and 20 resamples for each intermediate alpha. Under
+the newly published input-only expected M0 divisors and cap 8, calibration chose
+full-history J5, uniform targets, alpha=0: error 2.34076, holdout 1.65801. Against
+the prepared h252/alpha-zero version this is -8.5% on calibration but +6.5% on
+holdout, so it is not superior on both groups. This is not an official score or
+independent test. The previously inspected holdout did not choose the setting.
+
+No comparison reports, outcomes, cached trajectories, empirical selection
+thresholds or corpus are included in the image or accessed by the forecaster.
+Each numerical fit still reads only its currently mounted as-of prefix. This
+retrospective selection disclosure does not establish causal validation on
+earlier historical tasks. Future learned selection/calibration must use only
+information available by each task cutoff. There are no House calls, language
+model weights or trained neural artifacts; category api, models=[]. The earlier
+h252/alpha-zero image and ZIP remain separately available and are not this release.
+
 ## Release test_3-j5-h252-a0, 2026-10-12
 
 This release sets `QFBENCH_USE_PSMC=0` and uses the existing unconditional
@@ -76,15 +108,18 @@ There is no GBDT/Spectra selector. All available contiguous increments up to
 the mounted unit's cutoff fit each Spectra bank; context is 126 daily steps or 20 monthly steps. Joint
 cards estimate standardized PCA loadings from aligned increments in the same
 prefix and synthesize independent latent Spectra paths; this is an explicit
-extension, not the authors' multivariate scattering operator. Joint PSMC then
-conditions whole paths across all requested assets. Short isolated transfer
+extension, not the authors' multivariate scattering operator. Optional joint PSMC
+conditions whole paths across all requested assets when enabled; it is disabled
+in the current release. Short isolated transfer
 anchors use the latest sufficiently long earlier contiguous segment for fitting
 and context, and the current supplied level for anchoring. No return bridges
 the gap; no missing recent path is filled in. The stale regime is a material
 forecast-quality limitation, explicitly disclosed in each rationale.
 
-Kernel bandwidth uses generated past distances only, targeting ESS 256 among
-512 neighbors. No future labels fit/select/calibrate parameters. Fixed settings
+When PSMC is enabled, kernel bandwidth uses generated past distances only,
+targeting ESS 256 among 512 neighbors. No outcome labels are read during an
+invocation's fitting or forecasting. Retrospective fixed-setting comparisons
+are disclosed in the release sections above. Fixed settings
 were explored on completed historical windows within supplied public prefixes;
 those pilot results are research only, not official leaderboard scores or
 independent final-test evidence. Task text is not used in this version.

@@ -5,7 +5,7 @@ COPY submission_agent.py prediction.py generators.py psmc.py embeddings.py scatt
 COPY vendor/ /app/vendor/
 COPY LICENSE ARTIFACT_PROVENANCE.md /app/
 LABEL qfbench2.interface_version="2.0"
-LABEL org.opencontainers.image.title="Track2 Scattering Spectra CPU (alpha=0)"
-ENV QFBENCH_SS_MAX_SCALES=5 QFBENCH_SS_TARGET_HALF_LIFE=252 QFBENCH_USE_PSMC=0
+LABEL org.opencontainers.image.title="Track2 Scattering Spectra CPU (unweighted, alpha=0)"
+ENV QFBENCH_SS_MAX_SCALES=5 QFBENCH_SS_TARGET_HALF_LIFE=none QFBENCH_USE_PSMC=0
 USER 65534:65534
 ENTRYPOINT ["python", "/app/submission_agent.py"]

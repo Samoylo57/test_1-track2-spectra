@@ -32,7 +32,13 @@ rationale=(out/'forecast_rationale.md').read_text(encoding='utf-8')
 d=json.loads(rationale.rsplit('```json'+chr(10),1)[1].split('```',1)[0])
 expected=4 if d['unit_id']=='t2-F4-covid-nfp-2020' else 5
 assert d['config']['ss_scales']==expected
-assert d['config']['ss_target_half_life']==252
+assert d['config']['ss_target_half_life'] is None
+parameters=d['generator_parameters']
+for component in parameters.get('components',[parameters]):
+ if 'target_time_weighting' in component:
+  weighting=component['target_time_weighting']
+  assert weighting['method']=='uniform' and weighting['half_life'] is None
+  assert weighting['reference_energy_weighted'] is False
 assert d['config']['training_window'] is None
 assert d['config']['ss_device']=='cpu' and d['config']['ss_iterations']==200
 assert d['config']['context_length']==(20 if d['unit_id']=='t2-F4-covid-nfp-2020' else 126)
@@ -52,6 +58,7 @@ print(json.dumps({'admissible':True,'unit_id':d['unit_id'],'actual_J':expected,
  'context':d['config']['context_length'],'scale_policy':d['scale_policy'],
  'training_rows':d['training_rows'],'cpu_workers':d['config']['ss_workers'],
  'use_psmc':d['config']['use_psmc'],'mixture_alpha':d['mixture_alpha'],
+ 'target_half_life':d['config']['ss_target_half_life'],'target_weighting':'uniform',
  'official_gates':score,'torch':torch.__version__}))
 '''
 

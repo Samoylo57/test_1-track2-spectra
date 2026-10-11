@@ -1,7 +1,9 @@
 # Track 2 Scattering Spectra CPU
 
-Release `test_3-j5-h252-a0` disables PSMC (`alpha=0`) and uses the same unconditional branch evaluated in the cached paired experiment. Full contiguous prefix history, Battle-Lemarie Q=1/J<=5, target half-life 252 observations, 126 daily/20 monthly candidate context, bank 64x1024, 20,000 candidates, 1,000 joint draws, CPU/200 iterations are unchanged. Short prefixes use J=4.
+Release `test_3-j5-unweighted-a0`: full contiguous supplied prefix, Battle-Lemarie Q=1/J<=5 (short prefixes J=4), uniform historical target statistics, alpha=0 (PSMC disabled). Same CPU synthesis, joint PCA, 64x1024 bank, 20000 candidates, 1000 joint draws, 200 iterations and tolerance 0.006.
 
-Public registry: `ghcr.io/samoylo57/test_1-track2-spectra:test_3-j5-h252-a0`. Previous `test_1` and `test_2-j5-h252` images retain their immutable digests. Upload an officially signed descriptor ZIP bound to the new digest.
+`QFBENCH_SS_TARGET_HALF_LIFE=none` explicitly disables time weighting. No House calls, task data, fitted checkpoints, evaluation outcomes or cached trajectories are packaged. Numerical source files are unchanged from the prepared h252/alpha-zero release.
 
-No task data, learned selector, stored forecasts, model checkpoint or House call is packaged. `category: api`, `models: []`. See `ARTIFACT_PROVENANCE.md` for source pins, retrospective selection evidence and limitations. CI builds linux/amd64, runs real forecasts under Development restrictions and official admissibility gates, verifies a same-seed rerun, then publishes.
+This fixed-setting Development ablation was selected by retrospective calibration under the published expected M0 normalization/cap 8. It improves calibration but worsens the already inspected holdout against h252/alpha-zero; it is not independently validated. See ARTIFACT_PROVENANCE.md for software and selection disclosure.
+
+The public GHCR image is checked under offline/read-only/non-root CPU limits, including single, joint, monthly and transfer fixtures. The official toolkit ZIP contains an immutable image digest and signed team claim. Older image tags and ZIPs remain separate.
