@@ -2,7 +2,7 @@ name: Publish CPU forecasting image
 on:
   workflow_dispatch:
   push:
-    branches: [codex/submission]
+    branches: [codex/test4-center-width15]
 permissions:
   contents: read
   packages: write
@@ -16,18 +16,19 @@ jobs:
           persist-credentials: false
       - name: Build and check CPU image
         env:
-          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_3-j5-unweighted-a0
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_4-j5-unweighted-a0-boost-center-width15
         run: |
           docker build --platform linux/amd64 --label org.opencontainers.image.source=https://github.com/Samoylo57/test_1-track2-spectra --label org.opencontainers.image.revision="$GITHUB_SHA" --tag "$IMAGE" .
           docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --entrypoint python "$IMAGE" -c 'import json,os,torch,qfbench2_common; from submission_agent import profile; p=profile("daily",0); assert torch.version.cuda is None; assert p.ss_device=="cpu" and p.ss_iterations==200 and not p.ss_strict_tolerance; assert not p.use_psmc; assert p.training_window is None and p.context_length==126 and p.ss_target_half_life is None and int(os.environ["QFBENCH_SS_MAX_SCALES"])==5; print(json.dumps({"torch":torch.__version__,"cuda":torch.version.cuda,"generator":p.generator,"use_psmc":p.use_psmc,"target_half_life":p.ss_target_half_life,"toolkit":qfbench2_common.__version__}))'
-          sha256sum submission_agent.py prediction.py generators.py psmc.py embeddings.py scattering_generator.py scattering_cpu.py joint_scattering.py
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --mount "type=bind,source=$PWD/test_center_runtime.py,target=/app/test_center_runtime.py,readonly" --entrypoint python "$IMAGE" -m unittest test_center_runtime
+          sha256sum models/center.json center_features.py center_runtime.py submission_agent.py prediction.py generators.py psmc.py embeddings.py scattering_generator.py scattering_cpu.py joint_scattering.py
       - name: Validate real image and official gates
         env:
-          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_3-j5-unweighted-a0
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_4-j5-unweighted-a0-boost-center-width15
         run: python3 ci_validate_image.py --image "$IMAGE" --report image-validation.json
       - name: Publish to GHCR
         env:
-          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_3-j5-unweighted-a0
+          IMAGE: ghcr.io/samoylo57/test_1-track2-spectra:test_4-j5-unweighted-a0-boost-center-width15
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin

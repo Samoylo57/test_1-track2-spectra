@@ -1,75 +1,58 @@
-# Scattering Spectra CPU submission (optional PSMC)
+# Test 4: Spectra + selected non-neural residual centre, width x1.5
 
-## Current release test_3-j5-unweighted-a0, 2026-10-12
+Source date: 2026-10-12. Category api; House calls optional and unused.
+The numerical Spectra generator is exactly the published third image,
+immutable base digest cc016aeffd046cd164be90fa0c11fa2bd5fefbf801359f9f4009b43e04246402.
+Full supplied contiguous history, Battle-Lemarie Q1, J<=5, uniform target
+statistics, CPU 200 iterations, no PSMC, 1000 joint draws remain unchanged.
 
-The requested third Development submission sets `QFBENCH_SS_TARGET_HALF_LIFE=none`
-and `QFBENCH_USE_PSMC=0`. All historical wavelet energies and scattering targets
-use uniform pooling. It uses the existing unconditional control branch: 1000
-whole joint continuations sampled uniformly from the same 20000 candidates with
-the unchanged control RNG stream. PSMC distances, neighbors and weights are not
-computed. Full contiguous prefix fitting, Battle-Lemarie Q=1/J<=5, short-prefix
-J=4, PCA, 64x1024 bank, candidate past+future length, context setting 126 daily/20
-monthly, CPU/200 iterations, tolerance 0.006, transfer anchoring and all eight
-numerical source files are unchanged from the prepared h252/alpha-zero image.
-The `none` ENV explicitly overrides an inherited half-life in runtime builds.
+## Packaged learned artifact
 
-This is a fixed algorithm setting, with no fitted selector, per-card lookup or
-packaged model. The public retrospective comparison covered five completed
-profiles times alpha in {0,.25,.5,.75,1}, using the same 54 calibration, 19
-holdout and 2 purged cards and 20 resamples for each intermediate alpha. Under
-the newly published input-only expected M0 divisors and cap 8, calibration chose
-full-history J5, uniform targets, alpha=0: error 2.34076, holdout 1.65801. Against
-the prepared h252/alpha-zero version this is -8.5% on calibration but +6.5% on
-holdout, so it is not superior on both groups. This is not an official score or
-independent test. The previously inspected holdout did not choose the setting.
+models/center.json SHA256: 4381cf9ee199595055d9d3df180bde449db6d10a8d5f278b692960d0fb708952; own model/integration MIT.
+HistGradientBoostingRegressor trained/exported with scikit-learn 1.7.2.
+Squared error, 60 trees, depth 2, max 4 leaves, min_samples_leaf=60,
+learning_rate=.05, L2=10, early_stopping=False, random_state=0.
+Target=(actual-median_Spectra)/SD_Spectra, clipped +/-6 for training;
+weight=1/(horizons*assets), normalized to sum N. Prediction delta is
+SD_Spectra*clip(.5*booster(features),-1,1). Width is fixed 1.5.
+No refit or network access occurs during inference. Model JSON stores only
+split thresholds, leaf values, baseline and provenance; no training examples,
+task answers, panel histories, caches, task IDs or asset lookup table.
 
-No comparison reports, outcomes, cached trajectories, empirical selection
-thresholds or corpus are included in the image or accessed by the forecaster.
-Each numerical fit still reads only its currently mounted as-of prefix. This
-retrospective selection disclosure does not establish causal validation on
-earlier historical tasks. Future learned selection/calibration must use only
-information available by each task cutoff. There are no House calls, language
-model weights or trained neural artifacts; category api, models=[]. The earlier
-h252/alpha-zero image and ZIP remain separately available and are not this release.
+## Training, selection and cutoffs
 
-## Release test_3-j5-h252-a0, 2026-10-12
+197 frozen CPU Spectra prefix forecasts produce 952 normalized residual
+cells from the input panels of 54 calibration cards; 19 January origins
+2001-2019, 18 series. Last training target: 2019-10-23.
+Data source: Agenthon-2026/track2-forecasting-public public input panels,
+pinned source 2299dab3d31f5e93c10df087af86ffb0b7bfe938, MIT repository;
+underlying public data source attribution is retained by the organizers.
+Training plan SHA256 4a2c8af3752bb2ba1292a6ec687be3f32a98652fc49d2b3a103266cd34ad291d.
+Frozen forecast manifest SHA256 d2f9e0ba614e2199766337bd0898c0946ff84f89e350cb8eb0f167b9c20cf856.
+Parameter selection SHA256 e76006a05340df0c4df3d5c3d6780a20dad9ed2c2126dcc68547b40b99280d6c.
+Parameters and width were selected on 54 retrospective calibration cards,
+last resolved calibration target 2020-07-21; the 19 control cards did not select
+parameters. Historical data-release vintages have not been reconstructed;
+the local results are retrospective, not independent historical validation.
 
-This release sets `QFBENCH_USE_PSMC=0` and uses the existing unconditional
-control branch, corresponding to alpha=0. It does not calculate PSMC distances
-or weights. It selects 1000 whole joint continuations uniformly from the same
-20000 candidates using the unchanged independent control seed stream. Bank
-synthesis, candidate past+future length, PCA, full contiguous prefix fitting,
-Battle-Lemarie Q=1/J<=5, historical target half-life=252 observations, context
-length 126 daily/20 monthly, 200-iteration limit and tolerance=0.006 are unchanged.
-Short prefixes still use J=4. Transfer anchoring is unchanged. PSMC code remains
-packaged for an explicit CLI override, but is disabled by the release ENV.
-No learned selector, per-card choice, historical evaluation results or corpus
-is included in the image. There are no House calls; category api/models[]=[].
+All learned adjustments, including width, require task asof strictly after
+both training and parameter-selection cutoff. Earlier tasks use unchanged
+Spectra (centre 0, width 1). The centre additionally requires daily frequency,
+J5, >=257 observations and contiguous current history; monthly/short/gapped
+transfer inputs fall back to centre zero. After eligible dates the width
+remains 1.5 even when the centre falls back. Dates are guards, never predictive
+features. Features use only the current panel and current uncorrected draws.
+Positive affine transforms retain joint draw identity and rank dependence.
 
-This is a fixed algorithm ablation requested after the public retrospective
-comparison of 75 cached predictions, not a fitted per-task selector. That
-comparison kept 54 calibration, 19 holdout and 2 purged cards, with 20
-stratified resamples per intermediate alpha in {0,.25,.5,.75,1}. Calibration
-selected alpha=0: local error 1.17423 vs 1.20339 for alpha=1; holdout 0.99443
-vs 1.01767. The comparison used reconstructed M0 and clipping 4 and is not
-an official score or independent test. No evaluation labels, cached forecasts
-or fitted selection thresholds are used by the forecaster; each numerical
-fit still reads only its currently mounted as-of prefix. Retrospective
-selection evidence is disclosed as such and does not establish causal
-validation on earlier historical cards. Any future learned selector or
-calibration must use information available by the individual task cutoff.
+This guard means the 54 historical calibration cards reproduce base Spectra
+in the production agent; the research calibration improvements are not a
+causal claim for those earlier dates. The 19 later control cards reproduce
+the tested selected correction exactly. They were already examined and are
+not a fresh independent evaluation.
 
-The CLI accepts `--use-psmc 0|1`; without release ENV, the research profile
-retains PSMC on. Diagnostics, CLI summary and rationale record actual use and
-mixture_alpha; disabled PSMC diagnostics are null rather than a fabricated ESS.
+## Pinned software and source provenance inherited from version 3
 
-This image contains forecasting source code and dependencies, no input corpus,
-panel histories, cached synthetic banks, unit-indexed answers, trained model
-checkpoints, retrieval indexes, credentials or House model calls. Descriptor:
-`category: api`, `models: []`. The numerical estimates are fitted anew from the
-currently mounted unit prefix; no fitted model is packaged in the image.
 
-## Numerical code and sources
 
 - Own integration, PSMC, foveal embedding and joint PCA extension: MIT, this
   workspace. Files are listed and SHA-256 hashed by `prepare_image.py`.

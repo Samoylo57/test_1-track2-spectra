@@ -1,9 +1,26 @@
-# Track 2 Scattering Spectra CPU
+# Fourth Track 2 submission
 
-Release `test_3-j5-unweighted-a0`: full contiguous supplied prefix, Battle-Lemarie Q=1/J<=5 (short prefixes J=4), uniform historical target statistics, alpha=0 (PSMC disabled). Same CPU synthesis, joint PCA, 64x1024 bank, 20000 candidates, 1000 joint draws, 200 iterations and tolerance 0.006.
+Full-history CPU Spectra, Battle-Lemarie J<=5, uniform target statistics,
+no PSMC. A disclosed local non-neural gradient booster adjusts the centre;
+width x1.5. 60 trees, depth 2, leaf minimum 60, L2=10, learning rate .05,
+centre strength .5, shift capped at +/-1 original forecast SD.
 
-`QFBENCH_SS_TARGET_HALF_LIFE=none` explicitly disables time weighting. No House calls, task data, fitted checkpoints, evaluation outcomes or cached trajectories are packaged. Numerical source files are unchanged from the prepared h252/alpha-zero release.
+Correction: median + SD*clip(.5*booster(features),-1,1)
+            + 1.5*(draw - median).
 
-This fixed-setting Development ablation was selected by retrospective calibration under the published expected M0 normalization/cap 8. It improves calibration but worsens the already inspected holdout against h252/alpha-zero; it is not independently validated. See ARTIFACT_PROVENANCE.md for software and selection disclosure.
+No unit lookup, model server, training histories, labels, cached answers,
+neural checkpoints or House calls are packaged. JSON trees are SHA-pinned
+and disclosed in the submission descriptor, category api/access local.
+See ARTIFACT_PROVENANCE.md for exact training and selection sources.
 
-The public GHCR image is checked under offline/read-only/non-root CPU limits, including single, joint, monthly and transfer fixtures. The official toolkit ZIP contains an immutable image digest and signed team claim. Older image tags and ZIPs remain separate.
+The last training target is 2019-10-23 and the last calibration-selection
+target is 2020-07-21. As required by the artifact policy, all learned
+adjustments (including width) require task cutoff strictly after both.
+Earlier historical tasks retain unchanged Spectra. The centre also falls
+back to zero for monthly/short/transfer inputs; eligible width stays x1.5.
+
+The seven generator modules and pinned CPU dependencies are reused from
+the immutable third image. CI runs the real non-root, offline, read-only
+linux/amd64 image through four official input fixtures, checks numerical
+corrections, official output gates and same-seed repeatability, then pushes
+the new release tag without changing previous image digests.

@@ -15,6 +15,7 @@ from prediction import ForecastConfig, Prediction, forecast_history, historical_
 from qfbench2_track_forecasting.limits import ParseLimits
 from scattering_cpu import cpu_budget
 from scattering_generator import select_scales
+from center_runtime import correct_draws
 
 ARTIFACTS = {'forecast.parquet','forecast_meta.json','forecast_rationale.md'}
 _ENV_DEFAULT = object()
@@ -137,6 +138,12 @@ def predict_task(args):
         prediction = Prediction(prediction.samples+shift,prediction.unconditional_samples+shift,diagnostics)
         diagnostics['anchor'] = current.tolist()
         diagnostics['quantiles'] = np.quantile(prediction.samples,[.05,.5,.95],axis=0).tolist()
+    adjusted, correction = correct_draws(prediction.samples, fit_series.to_numpy(), steps,
+        card['targets']['asset_ids'], card['targets']['target_type'], asof, frequency,
+        transfer, config.ss_scales)
+    prediction = Prediction(adjusted, adjusted.copy(), diagnostics)
+    diagnostics['residual_correction'] = correction
+    diagnostics['quantiles'] = np.quantile(adjusted,[.05,.5,.95],axis=0).tolist()
     diagnostics['unit_id'] = card['task']['id']
     diagnostics['asof'] = asof
     diagnostics['horizon_keys'] = card['targets']['horizons']
@@ -156,7 +163,7 @@ def write_artifacts(card,prediction,diagnostics,out):
     assets = card['targets']['asset_ids']; horizons = card['targets']['horizons']
     n_draws = len(prediction.samples)
     use_psmc = diagnostics.get('config', {}).get('use_psmc', True)
-    method = 'CPU Scattering Spectra' + (' + foveal PSMC' if use_psmc else '; alpha=0, uniform joint draws') + '; no text or LLM'
+    method = 'CPU Scattering Spectra' + (' + foveal PSMC' if use_psmc else '; alpha=0, uniform joint draws') + '; calibrated HistGradientBoosting centre, requested width x1.5; no text or LLM'
     cube = prediction.samples.transpose(0,2,1) if prediction.samples.ndim==3 else prediction.samples[:,None,:]
     if cube.shape!=(n_draws,len(assets),len(horizons)) or not np.isfinite(cube).all():
         raise ValueError('invalid joint draw grid')
@@ -184,8 +191,9 @@ def write_artifacts(card,prediction,diagnostics,out):
         text += "3. **Selection (alpha=0).** PSMC is disabled; no distance calculation, nearest-neighbour selection or kernel weighting is performed. Generate the same 20,000 candidates with the unchanged past-context + maximum-horizon length, and use the existing independent control RNG stream to select 1,000 whole joint continuations uniformly with replacement. All assets and horizons within a draw share the selected continuation. This is the same unconditional branch used in the saved paired experiment. The synthesis seed remains 12345 (plus latent component index); QFBENCH_SEED controls candidate and control selection.\n\n"
     if 'transfer' in diagnostics:
         text += f"4. **Transfer limitation.** {json.dumps(diagnostics['transfer'],ensure_ascii=False)}. No differences span the missing interval.\n\n"
-    text += "5. **Scale and shape.** Empirical synthetic increments retain fitted means and scales; their cumulative sums determine endpoint draws. Synthesis uses at most 200 iterations per latent component, aiming at relative error 0.006; finite approximations are retained if this target is not attained. Actual matching errors and convergence flags are recorded below. A non-converged bank is approximate, not a claim of exact spectrum matching. Monthly observation periods use the official mapping while output retains card horizon keys. No hand-coded scenario shifts, text claims, House calls, pretrained weights or other-unit histories are used. Accuracy against sealed future outcomes has not been measured locally.\n\n"
-    text += "**Adjustment ledger:** level = supplied last anchor + sum of simulated increments; cumulative log return = sum of simulated log increments. Text adjustment = 0. Transfer cases relocate the old level anchor to the current supplied anchor without estimating the missing path. Values, dates, means, scales, quantiles, PCA loadings and conditioning diagnostics follow.\n\n```json\n"
+    text += "5. **Scale and shape.** Empirical synthetic increments retain fitted means and scales; their cumulative sums determine endpoint draws. Synthesis uses at most 200 iterations per latent component, aiming at relative error 0.006; finite approximations are retained if this target is not attained. Actual matching errors and convergence flags are recorded below. A non-converged bank is approximate, not a claim of exact spectrum matching. Monthly observation periods use the official mapping while output retains card horizon keys. The packaged non-neural residual model was trained on public calibration histories; its model and parameter-selection cutoffs gate its use. No text claims, House calls or neural checkpoints are used. Accuracy against sealed future outcomes has not been measured locally.\n\n"
+    text += f"**Residual correction.** {json.dumps(diagnostics['residual_correction'], ensure_ascii=False)}. See /app/ARTIFACT_PROVENANCE.md. Positive per-cell affine transformations preserve joint draw identities and ranks.\n\n"
+    text += "**Adjustment ledger:** level = supplied last anchor + sum of simulated increments; cumulative log return = sum of simulated log increments. Apply residual centre delta and width factor from the correction ledger to the median-centred base draws. Text adjustment = 0. Transfer cases relocate the old level anchor to the current supplied anchor without estimating the missing path. Values, dates, means, scales, quantiles, PCA loadings and conditioning diagnostics follow.\n\n```json\n"
     text += json.dumps(diagnostics,ensure_ascii=False,indent=2,allow_nan=False)+'\n```\n'
     (out.parent/'forecast_rationale.md').write_text(text,encoding='utf-8')
     if sum(p.stat().st_size for p in out.parent.iterdir())>64*1024**2 or (out.parent/'forecast_rationale.md').stat().st_size>ParseLimits().max_rationale_bytes:

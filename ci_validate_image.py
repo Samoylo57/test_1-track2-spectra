@@ -46,6 +46,22 @@ assert d['config']['use_psmc'] is False and d['psmc'] is None
 assert d['mixture_alpha']==0 and 'PSMC is disabled' in rationale
 assert 'alpha=0' in json.loads((out/'forecast_meta.json').read_text())['rationale']['method']
 assert not d['text_used']
+
+import numpy as np
+from center_runtime import artifact
+c=d['residual_correction'];m,digest=artifact()
+assert c['revision']=='sha256:'+digest
+assert c['training_cutoff']=='2019-10-23' and c['selection_cutoff']=='2020-07-21'
+eligible=d['asof']>c['selection_cutoff']
+assert c['width_factor']==(1.5 if eligible else 1.)
+assert c['center_applied']==(eligible and 'transfer' not in d and expected==5)
+assert c['joint_draw_order_preserved'] and not c['text_used']
+q=np.asarray(d['quantiles']);q=q[:,:,None] if q.ndim==2 else q
+median=np.asarray(c['original_median']);delta=np.asarray(c['delta'])
+before=np.asarray(c['original_quantiles'])
+np.testing.assert_allclose(q,median+delta+c['width_factor']*(before-median),rtol=1e-10,atol=1e-12)
+assert 'Residual correction' in rationale and 'HistGradientBoosting' in rationale
+
 a,b,e=io.StringIO(),io.StringIO(),io.StringIO()
 with contextlib.redirect_stdout(a),contextlib.redirect_stderr(e):
  smoke=run_smoke(root,out,build_verifier)
@@ -58,6 +74,7 @@ print(json.dumps({'admissible':True,'unit_id':d['unit_id'],'actual_J':expected,
  'context':d['config']['context_length'],'scale_policy':d['scale_policy'],
  'training_rows':d['training_rows'],'cpu_workers':d['config']['ss_workers'],
  'use_psmc':d['config']['use_psmc'],'mixture_alpha':d['mixture_alpha'],
+ 'center_applied':c['center_applied'],'width_factor':c['width_factor'],'model_revision':c['revision'],
  'target_half_life':d['config']['ss_target_half_life'],'target_weighting':'uniform',
  'official_gates':score,'torch':torch.__version__}))
 '''
